@@ -1,0 +1,59 @@
+/**
+ * Charyel Design Tokens
+ * Immutable scale constants for color, typography, spacing, and elevation.
+ */
+:root {
+  /* Brand Palette (Charis + Yelwa: Grace & Abundant Life) */
+  --ch-color-emerald-50:  #ecfdf5;
+  --ch-color-emerald-100: #d1fae5;
+  --ch-color-emerald-400: #34d399;
+  --ch-color-emerald-500: #10b981;
+  --ch-color-emerald-600: #059669;
+  --ch-color-emerald-900: #064e3b;
+
+  --ch-color-amber-400:   #fbbf24;
+  --ch-color-amber-500:   #f59e0b;
+
+  --ch-color-slate-50:    #f8fafc;
+  --ch-color-slate-100:   #f1f5f9;
+  --ch-color-slate-200:   #e2e8f0;
+  --ch-color-slate-300:   #cbd5e1;
+  --ch-color-slate-400:   #94a3b8;
+  --ch-color-slate-500:   #64748b;
+  --ch-color-slate-600:   #475569;
+  --ch-color-slate-700:   #334155;
+  --ch-color-slate-800:   #1e293b;
+  --ch-color-slate-900:   #0f172a;
+  --ch-color-slate-950:   #020617;
+
+  /* Typography Scale */
+  --ch-font-sans: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --ch-text-xs:   0.75rem;
+  --ch-text-sm:   0.875rem;
+  --ch-text-base: 1rem;
+  --ch-text-lg:   1.125rem;
+  --ch-text-xl:   1.25rem;
+  --ch-text-2xl:  1.5rem;
+  --ch-text-3xl:  1.875rem;
+
+  /* Spacing Scale */
+  --ch-space-1: 0.25rem;
+  --ch-space-2: 0.5rem;
+  --ch-space-3: 0.75rem;
+  --ch-space-4: 1rem;
+  --ch-space-5: 1.25rem;
+  --ch-space-6: 1.5rem;
+  --ch-space-8: 2rem;
+  --ch-space-10: 2.5rem;
+
+  /* Radii */
+  --ch-radius-sm: 4px;
+  --ch-radius-md: 8px;
+  --ch-radius-lg: 12px;
+  --ch-radius-xl: 16px;
+  --ch-radius-full: 9999px;
+
+  /* Transitions */
+  --ch-transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --ch-transition-normal: 250ms cubic-bezier(0.4, 0, 0.2, 1);
+}

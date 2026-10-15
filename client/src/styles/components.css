@@ -1,0 +1,115 @@
+/**
+ * Charyel Reusable Component Styles
+ */
+
+/* Shell Layout */
+.app-shell {
+  max-width: 480px;
+  width: 100%;
+  margin: 0 auto;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  padding: var(--ch-space-4);
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--ch-space-3) 0;
+  border-bottom: 1px solid var(--color-border-subtle);
+  margin-bottom: var(--ch-space-4);
+}
+
+.logo {
+  font-size: var(--ch-text-xl);
+  font-weight: 700;
+  color: var(--color-brand-primary);
+  display: flex;
+  align-items: center;
+  gap: var(--ch-space-2);
+}
+
+.badge-offline {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ch-space-1);
+  padding: var(--ch-space-1) var(--ch-space-3);
+  font-size: var(--ch-text-xs);
+  font-weight: 600;
+  border-radius: var(--ch-radius-full);
+  background: var(--color-brand-surface);
+  color: var(--color-brand-primary);
+}
+
+/* Card Container */
+.card {
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--ch-radius-lg);
+  padding: var(--ch-space-6);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
+  margin-bottom: var(--ch-space-4);
+}
+
+.card-title {
+  font-size: var(--ch-text-lg);
+  font-weight: 600;
+  margin-bottom: var(--ch-space-2);
+}
+
+.card-subtitle {
+  font-size: var(--ch-text-sm);
+  color: var(--color-text-muted);
+  margin-bottom: var(--ch-space-4);
+}
+
+/* Primary Button */
+.btn-primary {
+  width: 100%;
+  padding: var(--ch-space-3) var(--ch-space-4);
+  background: var(--color-brand-primary);
+  color: var(--ch-color-slate-950);
+  font-weight: 600;
+  font-size: var(--ch-text-base);
+  border-radius: var(--ch-radius-md);
+  transition: background var(--ch-transition-fast);
+  text-align: center;
+}
+
+.btn-primary:hover {
+  background: var(--color-brand-hover);
+}
+
+.btn-primary:active {
+  background: var(--color-brand-active);
+}
+
+/* Stat Grid */
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--ch-space-3);
+  margin-top: var(--ch-space-4);
+}
+
+.stat-box {
+  background: var(--color-bg-surface-elevated);
+  padding: var(--ch-space-3);
+  border-radius: var(--ch-radius-md);
+  text-align: center;
+}
+
+.stat-value {
+  font-size: var(--ch-text-2xl);
+  font-weight: 700;
+  color: var(--color-brand-primary);
+}
+
+.stat-label {
+  font-size: var(--ch-text-xs);
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}

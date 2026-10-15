@@ -1,0 +1,22 @@
+/**
+ * Charyel Theme Variables
+ * Maps design tokens to semantic theme roles (Dark theme default for battery & eye comfort).
+ */
+:root {
+  --color-bg-canvas:       var(--ch-color-slate-950);
+  --color-bg-surface:      var(--ch-color-slate-900);
+  --color-bg-surface-elevated: var(--ch-color-slate-800);
+  --color-border-subtle:   var(--ch-color-slate-800);
+  --color-border-default:  var(--ch-color-slate-700);
+
+  --color-text-primary:    var(--ch-color-slate-50);
+  --color-text-secondary:  var(--ch-color-slate-300);
+  --color-text-muted:      var(--ch-color-slate-400);
+
+  --color-brand-primary:   var(--ch-color-emerald-500);
+  --color-brand-hover:     var(--ch-color-emerald-400);
+  --color-brand-active:    var(--ch-color-emerald-600);
+  --color-brand-surface:   var(--ch-color-emerald-900);
+
+  --color-accent-amber:    var(--ch-color-amber-400);
+}

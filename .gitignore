@@ -1,0 +1,75 @@
+# ======================================================================
+# CHARYEL MONOREPO — GITIGNORE
+# Zero Secret Exposure & Clean Build Artifact Boundaries
+# ======================================================================
+
+# --- Environment & Secret Credentials (NEVER COMMIT) ---
+.env
+.env.*
+!.env.example
+*.env
+*.key
+*.pem
+*.crt
+*.cert
+*.pfx
+*.p12
+
+# --- PHP / Composer Dependencies & Cache (server/) ---
+/server/vendor/
+/server/.phpunit.result.cache
+/server/storage/*.key
+/server/storage/framework/cache/*
+/server/storage/framework/sessions/*
+/server/storage/framework/views/*
+/server/storage/logs/*
+!/server/storage/framework/cache/.gitignore
+!/server/storage/framework/sessions/.gitignore
+!/server/storage/framework/views/.gitignore
+!/server/storage/logs/.gitignore
+/server/bootstrap/cache/*
+!/server/bootstrap/cache/.gitignore
+/server/.php-cs-fixer.cache
+/server/phpunit.xml.bak
+
+# --- Node / npm Dependencies & Build Artifacts (client/ & root) ---
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+/client/dist/
+/client/dist-ssr/
+/client/.vite/
+*.tsbuildinfo
+
+# --- Testing & Coverage Artifacts ---
+coverage/
+.nyc_output/
+*.lcov
+
+# --- OS & IDE Metadata ---
+.DS_Store
+Thumbs.db
+[Dd]esktop.ini
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# --- Temporary / Scratch Files ---
+*.tmp
+*.bak
+*.orig
+/scratch/
+/tmp/
+
+# --- Private Operational Runbooks & Transcripts (NEVER COMMIT TO PUBLIC REPO) ---
+/CHARYEL_HANDOFF.md
+/Gemini-*.md
+/docs/operations/private/
