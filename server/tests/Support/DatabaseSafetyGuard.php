@@ -7,6 +7,47 @@ use RuntimeException;
 
 class DatabaseSafetyGuard
 {
+    /**
+     * Strictly authorized MySQL test profiles.
+     * Each profile represents a verified, disposable test environment.
+     * Any connection failing to match all criteria of an authorized profile fails closed.
+     */
+    public const AUTHORIZED_MYSQL_PROFILES = [
+        'local_windows_isolated' => [
+            'name' => 'Local Windows Testing',
+            'database' => 'charyel_schema_test',
+            'users' => [
+                'charyel_test_runner@127.0.0.1',
+                'charyel_test_runner@localhost',
+            ],
+            'port' => 3308,
+            'hosts' => ['127.0.0.1', 'localhost'],
+            'version_prefix' => '9.7.2',
+        ],
+        'github_actions_ci' => [
+            'name' => 'GitHub Actions CI',
+            'database' => 'charyel_test',
+            'users' => [
+                'charyel_test@%',
+                'charyel_test@127.0.0.1',
+                'charyel_test@localhost',
+            ],
+            'port' => 3306,
+            'hosts' => ['127.0.0.1', 'localhost'],
+            'version_prefix' => '9.7.2',
+        ],
+    ];
+
+    /**
+     * Databases that are strictly prohibited from destructive testing under any circumstance.
+     */
+    public const FORBIDDEN_DATABASES = [
+        'charyel_dev',
+        'charyel_prod',
+        'charyel_production',
+    ];
+
+    // Backward-compatibility references for the local testing profile
     public const REQUIRED_MYSQL_DATABASE = 'charyel_schema_test';
     public const REQUIRED_MYSQL_USER = 'charyel_test_runner@127.0.0.1';
     public const REQUIRED_MYSQL_PORT = 3308;
@@ -18,15 +59,11 @@ class DatabaseSafetyGuard
      *
      * Permitted:
      * 1. In-memory SQLite: driver === 'sqlite' and database === ':memory:'
-     * 2. Isolated MySQL 9.7.2 test runner:
-     *    - Driver: mysql
-     *    - Database: charyel_schema_test
-     *    - User: charyel_test_runner@127.0.0.1
-     *    - Port: 3308
-     *    - Host: 127.0.0.1
-     *    - Version: 9.7.2*
+     * 2. Authorized MySQL 9.7.2 test runner matching either:
+     *    a. Local Windows isolated test runner (charyel_schema_test on port 3308)
+     *    b. GitHub Actions CI test runner (charyel_test on port 3306)
      *
-     * Everything else (including charyel_dev, production, port 3306, non-memory sqlite) fails closed.
+     * Everything else (including charyel_dev, charyel_prod, unauthorized users/ports, non-memory sqlite) fails closed.
      *
      * @throws RuntimeException
      */
@@ -62,7 +99,7 @@ class DatabaseSafetyGuard
         }
 
         throw new RuntimeException(
-            "DATABASE SAFETY GUARD VIOLATION: Unsupported driver '{$driver}'. Only ':memory:' SQLite or isolated MySQL test database are authorized."
+            "DATABASE SAFETY GUARD VIOLATION: Unsupported driver '{$driver}'. Only ':memory:' SQLite or authorized MySQL test databases are permitted."
         );
     }
 
@@ -81,7 +118,19 @@ class DatabaseSafetyGuard
     }
 
     /**
-     * Validate MySQL live connection parameters against the strictly authorized isolated test target.
+     * Determine whether execution is strictly inside an authenticated GitHub Actions CI runner.
+     */
+    public static function isGitHubActionsEnvironment(): bool
+    {
+        $ci = getenv('CI') ?: ($_SERVER['CI'] ?? ($_ENV['CI'] ?? null));
+        $ga = getenv('GITHUB_ACTIONS') ?: ($_SERVER['GITHUB_ACTIONS'] ?? ($_ENV['GITHUB_ACTIONS'] ?? null));
+
+        return in_array($ci, ['true', true, '1', 1], true)
+            && in_array($ga, ['true', true, '1', 1], true);
+    }
+
+    /**
+     * Validate MySQL live connection parameters against the strictly authorized test profiles.
      *
      * @throws RuntimeException
      */
@@ -90,28 +139,65 @@ class DatabaseSafetyGuard
         string $user,
         int $port,
         string $version,
-        string $host
+        string $host,
+        ?bool $isCiContext = null
     ): void {
+        // 1. Explicitly check for forbidden / production / development database names
+        $lowerDb = strtolower($database);
+        if (in_array($lowerDb, self::FORBIDDEN_DATABASES, true) || str_contains($lowerDb, 'prod')) {
+            throw new RuntimeException(
+                "DATABASE SAFETY GUARD VIOLATION: Target database '{$database}' is explicitly protected against test operations. Destructive testing blocked."
+            );
+        }
+
+        // 2. Resolve matching profile by target database name
+        $profile = null;
+        $profileKey = null;
+        foreach (self::AUTHORIZED_MYSQL_PROFILES as $key => $candidate) {
+            if ($candidate['database'] === $database) {
+                $profile = $candidate;
+                $profileKey = $key;
+                break;
+            }
+        }
+
+        if ($profile === null) {
+            $allowedDbs = implode("', '", array_column(self::AUTHORIZED_MYSQL_PROFILES, 'database'));
+            throw new RuntimeException(
+                "DATABASE SAFETY GUARD VIOLATION: Active database '{$database}' does not match any authorized test database (authorized: '{$allowedDbs}')."
+            );
+        }
+
+        // 3. Execution Context Validation:
+        // The GitHub Actions CI profile requires BOTH an explicit CI execution context AND the exact disposable CI database identity.
+        if ($profileKey === 'github_actions_ci') {
+            $ciActive = $isCiContext ?? self::isGitHubActionsEnvironment();
+            if (!$ciActive) {
+                throw new RuntimeException(
+                    "DATABASE SAFETY GUARD VIOLATION: CI test profile '{$database}' is strictly prohibited outside of an authenticated GitHub Actions test execution context."
+                );
+            }
+        }
+
+        // 4. Strict identity validation against the matched profile
         $errors = [];
 
-        if ($database !== self::REQUIRED_MYSQL_DATABASE) {
-            $errors[] = "Active database '{$database}' does not match required test database '" . self::REQUIRED_MYSQL_DATABASE . "'.";
+        if (!in_array($user, $profile['users'], true)) {
+            $allowedUsers = implode("', '", $profile['users']);
+            $errors[] = "Active user '{$user}' is not authorized for profile '{$profile['name']}' (authorized: '{$allowedUsers}').";
         }
 
-        if ($user !== self::REQUIRED_MYSQL_USER) {
-            $errors[] = "Active user '{$user}' does not match required test runner user '" . self::REQUIRED_MYSQL_USER . "'.";
+        if ($port !== $profile['port']) {
+            $errors[] = "Active port '{$port}' does not match required port {$profile['port']} for profile '{$profile['name']}'.";
         }
 
-        if ($port !== self::REQUIRED_MYSQL_PORT) {
-            $errors[] = "Active port '{$port}' does not match required test port " . self::REQUIRED_MYSQL_PORT . ".";
+        if (!str_starts_with($version, $profile['version_prefix'])) {
+            $errors[] = "Active MySQL version '{$version}' does not match required version prefix '{$profile['version_prefix']}'.";
         }
 
-        if (!str_starts_with($version, self::REQUIRED_MYSQL_VERSION_PREFIX)) {
-            $errors[] = "Active MySQL version '{$version}' does not match required version '" . self::REQUIRED_MYSQL_VERSION_PREFIX . "'.";
-        }
-
-        if ($host !== self::REQUIRED_MYSQL_HOST && $host !== 'localhost') {
-            $errors[] = "Configured host '{$host}' is not local loopback '" . self::REQUIRED_MYSQL_HOST . "'.";
+        if (!in_array($host, $profile['hosts'], true)) {
+            $allowedHosts = implode("', '", $profile['hosts']);
+            $errors[] = "Configured host '{$host}' is not an authorized local loopback for profile '{$profile['name']}' (authorized: '{$allowedHosts}').";
         }
 
         if (!empty($errors)) {
