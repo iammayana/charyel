@@ -119,11 +119,12 @@ class DatabaseSafetyGuard
 
     /**
      * Determine whether execution is strictly inside an authenticated GitHub Actions CI runner.
+     * Optional parameters allow deterministic unit testing of all logical branches.
      */
-    public static function isGitHubActionsEnvironment(): bool
+    public static function isGitHubActionsEnvironment(?string $ciVal = null, ?string $gaVal = null): bool
     {
-        $ci = getenv('CI') ?: ($_SERVER['CI'] ?? ($_ENV['CI'] ?? null));
-        $ga = getenv('GITHUB_ACTIONS') ?: ($_SERVER['GITHUB_ACTIONS'] ?? ($_ENV['GITHUB_ACTIONS'] ?? null));
+        $ci = $ciVal ?? (getenv('CI') ?: ($_SERVER['CI'] ?? ($_ENV['CI'] ?? null)));
+        $ga = $gaVal ?? (getenv('GITHUB_ACTIONS') ?: ($_SERVER['GITHUB_ACTIONS'] ?? ($_ENV['GITHUB_ACTIONS'] ?? null)));
 
         return in_array($ci, ['true', true, '1', 1], true)
             && in_array($ga, ['true', true, '1', 1], true);

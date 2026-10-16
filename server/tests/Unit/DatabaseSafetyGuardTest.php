@@ -272,11 +272,18 @@ class DatabaseSafetyGuardTest extends TestCase
     }
 
     /**
-     * Test 17: Local environment correctly evaluates isGitHubActionsEnvironment as false.
+     * Test 17: Evaluates GitHub Actions execution context deterministically.
      */
-    public function test_is_github_actions_environment_returns_false_by_default_locally(): void
+    public function test_is_github_actions_environment_evaluates_deterministically(): void
     {
-        // On this local machine without CI=true and GITHUB_ACTIONS=true
-        $this->assertFalse(DatabaseSafetyGuard::isGitHubActionsEnvironment());
+        // Both flags active -> true
+        $this->assertTrue(DatabaseSafetyGuard::isGitHubActionsEnvironment('true', 'true'));
+        $this->assertTrue(DatabaseSafetyGuard::isGitHubActionsEnvironment('1', '1'));
+
+        // One or both flags missing/inactive -> false
+        $this->assertFalse(DatabaseSafetyGuard::isGitHubActionsEnvironment('true', 'false'));
+        $this->assertFalse(DatabaseSafetyGuard::isGitHubActionsEnvironment('false', 'true'));
+        $this->assertFalse(DatabaseSafetyGuard::isGitHubActionsEnvironment('', ''));
+        $this->assertFalse(DatabaseSafetyGuard::isGitHubActionsEnvironment('0', '0'));
     }
 }

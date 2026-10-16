@@ -34,6 +34,19 @@ try {
     echo json_encode(['status' => 'ok', 'result' => $result]);
     exit(0);
 } catch (\Throwable $e) {
-    echo json_encode(['status' => 'error', 'message' => $e->getMessage()]);
+    $sanitize = static function (?string $msg): ?string {
+        if ($msg === null) {
+            return null;
+        }
+        return preg_replace('/(password[:=]\s*)[^\s;,\)]+/i', '$1[REDACTED]', $msg);
+    };
+
+    echo json_encode([
+        'status' => 'error',
+        'message' => $sanitize($e->getMessage()),
+        'exception' => get_class($e),
+        'file' => basename($e->getFile()) . ':' . $e->getLine(),
+        'previous' => $sanitize($e->getPrevious()?->getMessage()),
+    ]);
     exit(1);
 }

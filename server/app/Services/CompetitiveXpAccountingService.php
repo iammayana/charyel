@@ -255,33 +255,31 @@ class CompetitiveXpAccountingService
         string $awardDate,
         CarbonInterface $utcNow
     ): object {
-        // Step 1: Attempt to acquire row lock if the counter already exists
+        // Step 1: Check if the counter row already exists without locking (avoids InnoDB gap locks)
         $counter = DB::table('user_daily_competitive_counters')
             ->where('principal_key', $principalKey)
             ->where('award_date', $awardDate)
-            ->lockForUpdate()
             ->first();
 
-        if ($counter !== null) {
-            return $counter;
+        // Step 2: If row does not exist, insert initial record.
+        // Strictly catch UniqueConstraintViolationException only, allowing genuine database errors to surface.
+        if ($counter === null) {
+            try {
+                DB::table('user_daily_competitive_counters')->insert([
+                    'principal_key' => $principalKey,
+                    'user_id' => $userId,
+                    'guest_identity_id' => $guestIdentityId,
+                    'award_date' => $awardDate,
+                    'competitive_xp_total' => 0,
+                    'created_at' => $utcNow,
+                    'updated_at' => $utcNow,
+                ]);
+            } catch (\Illuminate\Database\UniqueConstraintViolationException $e) {
+                // Row was created concurrently by peer connection; proceed to lock the existing row
+            }
         }
 
-        // Step 2: If row does not exist, insert it safely handling concurrent inserts
-        try {
-            DB::table('user_daily_competitive_counters')->insert([
-                'principal_key' => $principalKey,
-                'user_id' => $userId,
-                'guest_identity_id' => $guestIdentityId,
-                'award_date' => $awardDate,
-                'competitive_xp_total' => 0,
-                'created_at' => $utcNow,
-                'updated_at' => $utcNow,
-            ]);
-        } catch (\Illuminate\Database\UniqueConstraintViolationException|\Illuminate\Database\QueryException $e) {
-            // Row was created by a concurrent connection in the same millisecond; ignore duplicate key
-        }
-
-        // Step 3: Acquire the exclusive row lock
+        // Step 3: Row is guaranteed to exist; acquire exclusive row lock (record lock, not gap lock)
         return DB::table('user_daily_competitive_counters')
             ->where('principal_key', $principalKey)
             ->where('award_date', $awardDate)

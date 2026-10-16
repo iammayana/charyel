@@ -734,10 +734,18 @@ class CompetitiveXpAccountingTest extends TestCase
             2 => ['pipe', 'w'],
         ];
 
+        $workerEnv = array_filter(getenv(), fn($v) => is_string($v) || is_numeric($v));
+        $workerEnv['DB_CONNECTION'] = 'mysql';
+        $workerEnv['DB_HOST'] = (string) ($config['host'] ?? '127.0.0.1');
+        $workerEnv['DB_PORT'] = (string) ($config['port'] ?? '');
+        $workerEnv['DB_DATABASE'] = (string) ($config['database'] ?? '');
+        $workerEnv['DB_USERNAME'] = (string) ($config['username'] ?? '');
+        $workerEnv['DB_PASSWORD'] = (string) ($config['password'] ?? '');
+
         try {
-            // Launch both processes concurrently
-            $p1 = proc_open($cmd1, $desc, $pipes1);
-            $p2 = proc_open($cmd2, $desc, $pipes2);
+            // Launch both processes concurrently with explicit application directory and connection environment
+            $p1 = proc_open($cmd1, $desc, $pipes1, base_path(), $workerEnv);
+            $p2 = proc_open($cmd2, $desc, $pipes2, base_path(), $workerEnv);
 
             $out1 = stream_get_contents($pipes1[1]);
             fclose($pipes1[1]);
