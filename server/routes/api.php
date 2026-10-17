@@ -23,8 +23,17 @@ Route::prefix('v1')->group(function () {
         ]);
     });
 
-    // Future route groups (to be implemented in Phase 3B):
-    // Route::post('/sync', [SyncController::class, 'handle']);
-    // Route::get('/questions/delta', [QuestionDeltaController::class, 'delta']);
-    // Route::get('/leaderboard/{scope}', [LeaderboardController::class, 'show']);
+    // Authentication Routes (Registered Users)
+    Route::prefix('auth')->group(function () {
+        Route::post('/register', [\App\Http\Controllers\Api\V1\AuthController::class, 'register'])
+            ->middleware('throttle:register');
+        Route::post('/login', [\App\Http\Controllers\Api\V1\AuthController::class, 'login'])
+            ->middleware('throttle:login');
+
+        Route::middleware(['auth:sanctum', 'auth.user:user:all'])->group(function () {
+            Route::get('/me', [\App\Http\Controllers\Api\V1\AuthController::class, 'me']);
+            Route::post('/logout', [\App\Http\Controllers\Api\V1\AuthController::class, 'logout']);
+            Route::post('/logout-all', [\App\Http\Controllers\Api\V1\AuthController::class, 'logoutAll']);
+        });
+    });
 });

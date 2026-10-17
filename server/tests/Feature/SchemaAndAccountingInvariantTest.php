@@ -229,10 +229,11 @@ class SchemaAndAccountingInvariantTest extends TestCase
     public function test_all_migrations_can_rollback_cleanly(): void
     {
         \Tests\Support\DatabaseSafetyGuard::assertDestructiveOperationsAllowed();
-        $exitCode = \Illuminate\Support\Facades\Artisan::call('migrate:rollback', ['--step' => 9]);
+        $exitCode = \Illuminate\Support\Facades\Artisan::call('migrate:rollback', ['--step' => 10]);
         $this->assertEquals(0, $exitCode);
 
         // Verify tables are dropped
+        $this->assertFalse(DB::getSchemaBuilder()->hasTable('personal_access_tokens'));
         $this->assertFalse(DB::getSchemaBuilder()->hasTable('user_daily_competitive_counters'));
         $this->assertFalse(DB::getSchemaBuilder()->hasTable('leaderboard_finalized_podiums'));
         $this->assertFalse(DB::getSchemaBuilder()->hasTable('leaderboard_weekly_rollups'));
