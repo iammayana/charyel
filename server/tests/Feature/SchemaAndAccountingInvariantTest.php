@@ -41,6 +41,10 @@ class SchemaAndAccountingInvariantTest extends TestCase
         $this->assertTrue(DB::getSchemaBuilder()->hasTable('leaderboard_weekly_rollups'));
         $this->assertTrue(DB::getSchemaBuilder()->hasTable('leaderboard_finalized_podiums'));
         $this->assertTrue(DB::getSchemaBuilder()->hasTable('user_daily_competitive_counters'));
+        $this->assertTrue(DB::getSchemaBuilder()->hasTable('contact_verification_tokens'));
+        $this->assertTrue(DB::getSchemaBuilder()->hasTable('offline_quiz_authorizations'));
+        $this->assertTrue(DB::getSchemaBuilder()->hasTable('guest_identity_claims'));
+        $this->assertTrue(DB::getSchemaBuilder()->hasTable('guest_claim_daily_attributions'));
 
         // Verify singleton publication counter was seeded to 0
         $seq = DB::table('publication_sequences')->where('id', 1)->first();
@@ -235,6 +239,10 @@ class SchemaAndAccountingInvariantTest extends TestCase
         $this->assertContains('2026_10_16_000011_harden_daily_counters_and_audit_events', $migrationsBefore);
         $this->assertTrue(DB::getSchemaBuilder()->hasTable('competitive_xp_events'));
 
+        // Roll back Migrations 13 and 12 first so Migration 11 is at the top of the stack
+        $exitCodeTop = \Illuminate\Support\Facades\Artisan::call('migrate:rollback', ['--step' => 2]);
+        $this->assertEquals(0, $exitCodeTop);
+
         // 2. Roll back ONLY Migration 11 (--step => 1)
         $exitCode = \Illuminate\Support\Facades\Artisan::call('migrate:rollback', ['--step' => 1]);
         $this->assertEquals(0, $exitCode);
@@ -309,15 +317,19 @@ class SchemaAndAccountingInvariantTest extends TestCase
     }
 
     /**
-     * Test 7: All 11 application migrations can rollback cleanly without constraint errors.
+     * Test 7: All 13 application migrations can rollback cleanly without constraint errors.
      */
     public function test_all_migrations_can_rollback_cleanly(): void
     {
         \Tests\Support\DatabaseSafetyGuard::assertDestructiveOperationsAllowed();
-        $exitCode = \Illuminate\Support\Facades\Artisan::call('migrate:rollback', ['--step' => 11]);
+        $exitCode = \Illuminate\Support\Facades\Artisan::call('migrate:rollback', ['--step' => 13]);
         $this->assertEquals(0, $exitCode);
 
         // Verify tables are dropped
+        $this->assertFalse(DB::getSchemaBuilder()->hasTable('guest_claim_daily_attributions'));
+        $this->assertFalse(DB::getSchemaBuilder()->hasTable('guest_identity_claims'));
+        $this->assertFalse(DB::getSchemaBuilder()->hasTable('offline_quiz_authorizations'));
+        $this->assertFalse(DB::getSchemaBuilder()->hasTable('contact_verification_tokens'));
         $this->assertFalse(DB::getSchemaBuilder()->hasTable('competitive_xp_events'));
         $this->assertFalse(DB::getSchemaBuilder()->hasTable('personal_access_tokens'));
         $this->assertFalse(DB::getSchemaBuilder()->hasTable('user_daily_competitive_counters'));
