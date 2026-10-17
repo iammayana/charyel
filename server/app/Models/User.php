@@ -57,4 +57,12 @@ class User extends Authenticatable
             ->where('is_primary', true)
             ->where('status', 'active');
     }
+
+    /**
+     * All guest identities claimed by this user.
+     */
+    public function claimedGuestIdentities(): HasMany
+    {
+        return $this->hasMany(GuestIdentity::class, 'claimed_by_user_id');
+    }
 }

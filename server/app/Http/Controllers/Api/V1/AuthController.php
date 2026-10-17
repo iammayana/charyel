@@ -5,8 +5,10 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Models\Church;
 use App\Models\ChurchMembership;
+use App\Models\GuestIdentity;
 use App\Models\User;
 use App\Models\UserProfile;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -266,6 +268,156 @@ class AuthController extends Controller
         return response()->json([
             'status' => 'success',
             'message' => $message,
+        ]);
+    }
+
+    /**
+     * Authenticate or register an anonymous guest identity via proof-of-possession.
+     * Issues a scoped 30-day Sanctum token restricted to [guest:play].
+     */
+    public function guest(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'guest_uuid' => [
+                'required',
+                'string',
+                'uuid',
+                'regex:/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i',
+            ],
+            'guest_secret' => [
+                'required',
+                'string',
+                function ($attribute, $value, $fail) {
+                    $isHex64 = (bool) preg_match('/^[0-9a-fA-F]{64}$/', $value);
+                    $isBase64Url = (bool) preg_match('/^[A-Za-z0-9_-]{43,44}={0,2}$/', $value);
+                    if (!$isHex64 && !$isBase64Url) {
+                        $fail('The ' . $attribute . ' must be a properly encoded 256-bit cryptographically random secret (64-character hex or 43-44 character base64url).');
+                        return;
+                    }
+                    if ($isBase64Url && !$isHex64) {
+                        $decoded = base64_decode(strtr($value, '-_', '+/'), true);
+                        if ($decoded === false || strlen($decoded) !== 32) {
+                            $fail('The ' . $attribute . ' must decode to exactly 256 bits (32 bytes).');
+                        }
+                    }
+                },
+            ],
+            'device_name' => ['nullable', 'string', 'max:64'],
+        ], [
+            'guest_uuid.regex' => 'The guest uuid must be a canonical UUIDv7.',
+        ]);
+
+        $guestUuid = strtolower($validated['guest_uuid']);
+        $guestSecret = $validated['guest_secret'];
+        $deviceName = $validated['device_name'] ?? 'Charyel Guest Client';
+
+        // Transactional handler for guest lookup / creation
+        $executeAuth = function () use ($guestUuid, $guestSecret, $deviceName) {
+            $guest = GuestIdentity::where('guest_uuid', $guestUuid)->lockForUpdate()->first();
+
+            if ($guest) {
+                // Reauthentication path
+                // 1. Strict proof of possession must be verified BEFORE any claim state disclosure
+                if (!Hash::check($guestSecret, $guest->secret_hash)) {
+                    return [
+                        'status' => 'unauthorized',
+                        'message' => 'Invalid guest credentials.',
+                    ];
+                }
+
+                // 2. Reject reauthentication if the identity was already claimed by a registered user
+                if ($guest->isClaimed()) {
+                    return [
+                        'status' => 'claimed',
+                        'message' => 'Guest identity has been claimed and converted into a registered user account.',
+                    ];
+                }
+
+                // 3. Revoke existing tokens for this identity to enforce single-active token policy
+                $guest->tokens()->delete();
+
+                // 4. Issue a new 30-day fixed-expiry guest token
+                $expiresAt = now()->addDays(30);
+                $plainToken = $guest->createToken($deviceName, ['guest:play'], $expiresAt)->plainTextToken;
+
+                return [
+                    'status' => 'success',
+                    'code' => 200,
+                    'guest' => $guest,
+                    'token' => $plainToken,
+                    'expires_at' => $expiresAt,
+                ];
+            }
+
+            // Registration path
+            $guest = GuestIdentity::create([
+                'guest_uuid' => $guestUuid,
+                'secret_hash' => Hash::make($guestSecret),
+            ]);
+
+            $expiresAt = now()->addDays(30);
+            $plainToken = $guest->createToken($deviceName, ['guest:play'], $expiresAt)->plainTextToken;
+
+            return [
+                'status' => 'success',
+                'code' => 201,
+                'guest' => $guest,
+                'token' => $plainToken,
+                'expires_at' => $expiresAt,
+            ];
+        };
+
+        try {
+            $result = DB::transaction($executeAuth);
+        } catch (UniqueConstraintViolationException $e) {
+            // If concurrent registrations raced on the unique constraint, re-execute as reauthentication
+            $result = DB::transaction($executeAuth);
+        }
+
+        if ($result['status'] === 'unauthorized') {
+            return response()->json([
+                'status' => 'error',
+                'message' => $result['message'],
+            ], 401);
+        }
+
+        if ($result['status'] === 'claimed') {
+            return response()->json([
+                'status' => 'error',
+                'message' => $result['message'],
+            ], 403);
+        }
+
+        $guest = $result['guest'];
+
+        return response()->json([
+            'status' => 'success',
+            'data' => [
+                'auth_mode' => 'bearer',
+                'guest_uuid' => $guest->guest_uuid,
+                'token' => $result['token'],
+                'token_type' => 'Bearer',
+                'abilities' => ['guest:play'],
+                'expires_at' => $result['expires_at']->toIso8601String(),
+                'is_claimed' => false,
+            ],
+        ], $result['code']);
+    }
+
+    /**
+     * Retrieve the current authenticated guest's identity details.
+     */
+    public function guestMe(Request $request): JsonResponse
+    {
+        $guest = $request->user();
+
+        return response()->json([
+            'status' => 'success',
+            'data' => [
+                'guest_uuid' => $guest->guest_uuid,
+                'created_at' => $guest->created_at?->toIso8601String(),
+                'is_claimed' => $guest->isClaimed(),
+            ],
         ]);
     }
 }
