@@ -606,6 +606,37 @@ class CompetitiveXpAccountingTest extends TestCase
         $this->assertEquals(250, $c17);
     }
 
+
+    /**
+     * Verify that an independent PDO connection points strictly to an authorized disposable MySQL test database.
+     * Enforces fail-closed protection before executing destructive test cleanup.
+     *
+     * @throws \RuntimeException
+     */
+    protected function assertPdoPointsToDisposableTestDatabase(\PDO $pdo, string $configHost = '127.0.0.1'): void
+    {
+        $stmt = $pdo->query("SELECT DATABASE() as db, CURRENT_USER() as user, @@port as port, @@version as version");
+        $meta = $stmt ? $stmt->fetch(\PDO::FETCH_ASSOC) : null;
+
+        if (!$meta) {
+            throw new \RuntimeException("CONCURRENCY TEST SAFETY VIOLATION: Failed to query live PDO connection identity.");
+        }
+
+        $currentDb = (string) ($meta['db'] ?? '');
+        $currentUser = (string) ($meta['user'] ?? '');
+        $currentPort = (int) ($meta['port'] ?? 0);
+        $currentVersion = (string) ($meta['version'] ?? '');
+
+        // Enforce fail-closed validation against authorized profiles via DatabaseSafetyGuard
+        \Tests\Support\DatabaseSafetyGuard::validateMysqlIdentity(
+            $currentDb,
+            $currentUser,
+            $currentPort,
+            $currentVersion,
+            $configHost
+        );
+    }
+
     /**
      * Test 13: Real concurrency with two independent MySQL database connections.
      */
@@ -694,12 +725,26 @@ class CompetitiveXpAccountingTest extends TestCase
             $this->assertEquals(150, $awarded2);
             $this->assertEquals(400, $awarded1 + $awarded2);
         } finally {
-            // Clean up test data
-            $pdo1->exec("DELETE FROM processed_events WHERE user_id = {$userId}");
-            $pdo1->exec("DELETE FROM user_xp_ledger WHERE user_id = {$userId}");
-            $pdo1->exec("DELETE FROM user_daily_competitive_counters WHERE user_id = {$userId}");
-            $pdo1->exec("DELETE FROM user_profiles WHERE user_id = {$userId}");
-            $pdo1->exec("DELETE FROM users WHERE id = {$userId}");
+            $this->assertPdoPointsToDisposableTestDatabase($pdo1, (string) ($config['host'] ?? '127.0.0.1'));
+
+            // Clean up test data using prepared statements with bound parameters
+            $stmtAudit = $pdo1->prepare("DELETE FROM competitive_xp_events WHERE principal_key = :pk");
+            $stmtAudit->execute(['pk' => $principalKey]);
+
+            $stmtProc = $pdo1->prepare("DELETE FROM processed_events WHERE user_id = :uid");
+            $stmtProc->execute(['uid' => $userId]);
+
+            $stmtLedger = $pdo1->prepare("DELETE FROM user_xp_ledger WHERE user_id = :uid");
+            $stmtLedger->execute(['uid' => $userId]);
+
+            $stmtCounter = $pdo1->prepare("DELETE FROM user_daily_competitive_counters WHERE user_id = :uid");
+            $stmtCounter->execute(['uid' => $userId]);
+
+            $stmtProfile = $pdo1->prepare("DELETE FROM user_profiles WHERE user_id = :uid");
+            $stmtProfile->execute(['uid' => $userId]);
+
+            $stmtUser = $pdo1->prepare("DELETE FROM users WHERE id = :uid");
+            $stmtUser->execute(['uid' => $userId]);
         }
     }
 
@@ -781,11 +826,26 @@ class CompetitiveXpAccountingTest extends TestCase
             $profileXp = $pdo->query("SELECT total_xp FROM user_profiles WHERE user_id = {$userId}")->fetchColumn();
             $this->assertEquals(500, (int) $profileXp); // Lifetime XP is 250 + 250 = 500
         } finally {
-            $pdo->exec("DELETE FROM processed_events WHERE user_id = {$userId}");
-            $pdo->exec("DELETE FROM user_xp_ledger WHERE user_id = {$userId}");
-            $pdo->exec("DELETE FROM user_daily_competitive_counters WHERE user_id = {$userId}");
-            $pdo->exec("DELETE FROM user_profiles WHERE user_id = {$userId}");
-            $pdo->exec("DELETE FROM users WHERE id = {$userId}");
+            $this->assertPdoPointsToDisposableTestDatabase($pdo, (string) ($config['host'] ?? '127.0.0.1'));
+
+            // Clean up test data using prepared statements with bound parameters
+            $stmtAudit = $pdo->prepare("DELETE FROM competitive_xp_events WHERE principal_key = :pk");
+            $stmtAudit->execute(['pk' => 'U:' . $userId]);
+
+            $stmtProc = $pdo->prepare("DELETE FROM processed_events WHERE user_id = :uid");
+            $stmtProc->execute(['uid' => $userId]);
+
+            $stmtLedger = $pdo->prepare("DELETE FROM user_xp_ledger WHERE user_id = :uid");
+            $stmtLedger->execute(['uid' => $userId]);
+
+            $stmtCounter = $pdo->prepare("DELETE FROM user_daily_competitive_counters WHERE user_id = :uid");
+            $stmtCounter->execute(['uid' => $userId]);
+
+            $stmtProfile = $pdo->prepare("DELETE FROM user_profiles WHERE user_id = :uid");
+            $stmtProfile->execute(['uid' => $userId]);
+
+            $stmtUser = $pdo->prepare("DELETE FROM users WHERE id = :uid");
+            $stmtUser->execute(['uid' => $userId]);
         }
     }
 }

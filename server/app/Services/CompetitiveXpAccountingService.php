@@ -206,7 +206,23 @@ class CompetitiveXpAccountingService
                     ->increment('total_xp', $requestedXp);
             }
 
-            // 7. Mark event processed for replay protection and event-level auditability
+            // 7. Append to competitive_xp_events (typed competitive audit log)
+            // Created atomically with counter update for any valid competitive award
+            if ($competitiveAwarded > 0) {
+                DB::table('competitive_xp_events')->insert([
+                    'principal_key' => $principalKey,
+                    'award_date' => $awardDate,
+                    'event_type' => $rewardSource,
+                    'xp_delta' => $competitiveAwarded,
+                    'counter_before' => $currentCompetitiveTotal,
+                    'counter_after' => $newCompetitiveTotal,
+                    'reference_id' => $sourceId,
+                    'event_id' => $eventId,
+                    'created_at' => $utcNow,
+                ]);
+            }
+
+            // 8. Mark event processed for replay protection and event-level auditability
             DB::table('processed_events')->insert([
                 'event_id' => $eventId,
                 'session_id' => ($rewardSource === 'quiz_completion' && Str::isUuid($sourceId)) ? $sourceId : null,
@@ -351,5 +367,19 @@ class CompetitiveXpAccountingService
             'is_reconciled' => ($counterTotal === $reconstructedCompetitive),
             'events' => $eventList,
         ];
+    }
+
+    /**
+     * Retrieve the immutable typed competitive audit events for a principal and award date.
+     *
+     * @return \Illuminate\Support\Collection<int, object>
+     */
+    public function getAuditEvents(string $principalKey, string $awardDate)
+    {
+        return DB::table('competitive_xp_events')
+            ->where('principal_key', $principalKey)
+            ->where('award_date', $awardDate)
+            ->orderBy('id', 'asc')
+            ->get();
     }
 }

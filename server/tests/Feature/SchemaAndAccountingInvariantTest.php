@@ -222,17 +222,103 @@ class SchemaAndAccountingInvariantTest extends TestCase
         $this->assertEquals(350, $calculatedTotal);
         $this->assertEquals($calculatedTotal, $storedTotal);
     }
+    /**
+     * Test 6: Migration 11 can rollback and reapply independently while Migrations 1-10 remain intact.
+     */
+    public function test_migration_11_can_rollback_and_reapply_independently(): void
+    {
+        \Tests\Support\DatabaseSafetyGuard::assertDestructiveOperationsAllowed();
+
+        // 1. Confirm Migrations 1-10 and 11 are present before rollback
+        $migrationsBefore = DB::table('migrations')->pluck('migration')->toArray();
+        $this->assertContains('2026_10_16_000010_create_personal_access_tokens_table', $migrationsBefore);
+        $this->assertContains('2026_10_16_000011_harden_daily_counters_and_audit_events', $migrationsBefore);
+        $this->assertTrue(DB::getSchemaBuilder()->hasTable('competitive_xp_events'));
+
+        // 2. Roll back ONLY Migration 11 (--step => 1)
+        $exitCode = \Illuminate\Support\Facades\Artisan::call('migrate:rollback', ['--step' => 1]);
+        $this->assertEquals(0, $exitCode);
+
+        // 3. Confirm competitive_xp_events table was removed
+        $this->assertFalse(DB::getSchemaBuilder()->hasTable('competitive_xp_events'));
+
+        // 4. Confirm original chk_daily_counter_owner constraint is restored (MySQL)
+        if (DB::getDriverName() === 'mysql') {
+            $constraints = DB::select("
+                SELECT CONSTRAINT_NAME
+                FROM information_schema.TABLE_CONSTRAINTS
+                WHERE TABLE_SCHEMA = DATABASE()
+                  AND TABLE_NAME = 'user_daily_competitive_counters'
+                  AND CONSTRAINT_TYPE = 'CHECK'
+            ");
+            $names = array_column($constraints, 'CONSTRAINT_NAME');
+            $this->assertContains('chk_daily_counter_owner', $names);
+            $this->assertNotContains('chk_counter_ownership_xor', $names);
+        }
+
+        // 5. Confirm tables and migration history for Migrations 1-10 remain intact
+        $tables1to10 = [
+            'personal_access_tokens',
+            'user_daily_competitive_counters',
+            'leaderboard_finalized_podiums',
+            'leaderboard_weekly_rollups',
+            'league_periods',
+            'processed_events',
+            'user_xp_ledger',
+            'quiz_session_items',
+            'quiz_sessions',
+            'question_changes',
+            'question_revisions',
+            'questions',
+            'publication_sequences',
+            'church_memberships',
+            'user_profiles',
+            'guest_identities',
+            'churches',
+            'localities',
+            'regions',
+            'countries',
+            'users',
+        ];
+        foreach ($tables1to10 as $table) {
+            $this->assertTrue(DB::getSchemaBuilder()->hasTable($table), "Table {$table} must remain intact after rolling back Migration 11.");
+        }
+
+        $migrationsAfter = DB::table('migrations')->pluck('migration')->toArray();
+        $this->assertContains('2026_10_16_000010_create_personal_access_tokens_table', $migrationsAfter);
+        $this->assertNotContains('2026_10_16_000011_harden_daily_counters_and_audit_events', $migrationsAfter);
+
+        // 6. Confirm Migration 11 can be reapplied successfully
+        $reapplyExitCode = \Illuminate\Support\Facades\Artisan::call('migrate');
+        $this->assertEquals(0, $reapplyExitCode);
+
+        $this->assertTrue(DB::getSchemaBuilder()->hasTable('competitive_xp_events'));
+
+        if (DB::getDriverName() === 'mysql') {
+            $reappliedConstraints = DB::select("
+                SELECT CONSTRAINT_NAME
+                FROM information_schema.TABLE_CONSTRAINTS
+                WHERE TABLE_SCHEMA = DATABASE()
+                  AND TABLE_NAME = 'user_daily_competitive_counters'
+                  AND CONSTRAINT_TYPE = 'CHECK'
+            ");
+            $reappliedNames = array_column($reappliedConstraints, 'CONSTRAINT_NAME');
+            $this->assertContains('chk_counter_ownership_xor', $reappliedNames);
+            $this->assertNotContains('chk_daily_counter_owner', $reappliedNames);
+        }
+    }
 
     /**
-     * Test 6: All 8 application migrations can rollback cleanly without constraint errors.
+     * Test 7: All 11 application migrations can rollback cleanly without constraint errors.
      */
     public function test_all_migrations_can_rollback_cleanly(): void
     {
         \Tests\Support\DatabaseSafetyGuard::assertDestructiveOperationsAllowed();
-        $exitCode = \Illuminate\Support\Facades\Artisan::call('migrate:rollback', ['--step' => 10]);
+        $exitCode = \Illuminate\Support\Facades\Artisan::call('migrate:rollback', ['--step' => 11]);
         $this->assertEquals(0, $exitCode);
 
         // Verify tables are dropped
+        $this->assertFalse(DB::getSchemaBuilder()->hasTable('competitive_xp_events'));
         $this->assertFalse(DB::getSchemaBuilder()->hasTable('personal_access_tokens'));
         $this->assertFalse(DB::getSchemaBuilder()->hasTable('user_daily_competitive_counters'));
         $this->assertFalse(DB::getSchemaBuilder()->hasTable('leaderboard_finalized_podiums'));
@@ -256,5 +342,8 @@ class SchemaAndAccountingInvariantTest extends TestCase
 
         // Baseline tables still intact
         $this->assertTrue(DB::getSchemaBuilder()->hasTable('users'));
+
+        // Re-migrate so disposable database remains in clean fully-migrated state
+        \Illuminate\Support\Facades\Artisan::call('migrate');
     }
 }
