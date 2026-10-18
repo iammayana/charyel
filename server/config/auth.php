@@ -114,4 +114,24 @@ return [
 
     'password_timeout' => env('AUTH_PASSWORD_TIMEOUT', 10800),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Contact Verification & OTP Lifecycle (Revision 3.1)
+    |--------------------------------------------------------------------------
+    |
+    | Configuration for contact verification challenges and cryptographic HMACs.
+    | Supports active key selection, multi-key rotation lookup, and delivery drivers.
+    |
+    */
+
+    'verification' => [
+        'key' => env('CHARYEL_OTP_KEY'),
+        'active_key_id' => env('CHARYEL_OTP_KEY_ID', 'v1'),
+        'keys' => [
+            'v1' => env('CHARYEL_OTP_KEY_V1', env('CHARYEL_OTP_KEY')),
+            'v2' => env('CHARYEL_OTP_KEY_V2'),
+        ],
+        'delivery_driver' => env('CHARYEL_OTP_DELIVERY_DRIVER', 'array'),
+    ],
+
 ];

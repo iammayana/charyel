@@ -14,7 +14,21 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        $this->app->singleton(\App\Contracts\OtpDeliveryServiceContract::class, function ($app) {
+            $driver = config('auth.verification.delivery_driver', 'array');
+            if ($app->isProduction()) {
+                if ($driver === 'array') {
+                    throw new \RuntimeException('ArrayOtpDeliveryService is strictly forbidden in production.');
+                }
+                return new \App\Services\Verification\ProductionOtpDeliveryService();
+            }
+
+            if ($driver === 'production') {
+                return new \App\Services\Verification\ProductionOtpDeliveryService();
+            }
+
+            return new \App\Services\Verification\ArrayOtpDeliveryService();
+        });
     }
 
     /**
@@ -34,6 +48,18 @@ class AppServiceProvider extends ServiceProvider
         RateLimiter::for('guest', function (Request $request) {
             $key = $request->ip() . '|' . strtolower((string) $request->input('guest_uuid'));
             return Limit::perMinute(10)->by($key);
+        });
+
+        RateLimiter::for('verification-challenge', function (Request $request) {
+            $user = $request->user();
+            $principalKey = $user ? get_class($user) . ':' . $user->id : $request->ip();
+            return Limit::perMinute(6)->by($principalKey . '|' . $request->ip());
+        });
+
+        RateLimiter::for('verification-verify', function (Request $request) {
+            $user = $request->user();
+            $principalKey = $user ? get_class($user) . ':' . $user->id : $request->ip();
+            return Limit::perMinute(15)->by($principalKey . '|' . $request->ip());
         });
     }
 }

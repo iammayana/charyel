@@ -50,5 +50,14 @@ Route::prefix('v1')->group(function () {
             Route::post('/guest/logout', [\App\Http\Controllers\Api\V1\AuthController::class, 'logout']);
         });
 
+        // Contact Verification Endpoints (Accessible by authenticated guests or users)
+        Route::middleware(['auth:sanctum'])->prefix('verification')->group(function () {
+            Route::post('/challenge', [\App\Http\Controllers\Api\V1\VerificationController::class, 'challenge'])
+                ->middleware('throttle:verification-challenge');
+            Route::post('/verify', [\App\Http\Controllers\Api\V1\VerificationController::class, 'verify'])
+                ->middleware('throttle:verification-verify');
+            Route::get('/status', [\App\Http\Controllers\Api\V1\VerificationController::class, 'status']);
+        });
+
     });
 });

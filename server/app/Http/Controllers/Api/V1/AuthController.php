@@ -578,6 +578,15 @@ class AuthController extends Controller
 
             if ($contactUpdated) {
                 $lockedGuest->save();
+
+                // Invalidate any open verification challenges if schema exists
+                if (Schema::hasTable('contact_verification_tokens')) {
+                    DB::table('contact_verification_tokens')
+                        ->where('guest_identity_id', $lockedGuest->id)
+                        ->whereNull('verified_at')
+                        ->whereNull('locked_at')
+                        ->update(['locked_at' => now()]);
+                }
             }
 
             return [
