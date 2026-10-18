@@ -46,7 +46,9 @@ Route::prefix('v1')->group(function () {
         // Anonymous Guest Protected Endpoints
         Route::middleware(['auth:sanctum', 'auth.guest:guest:play'])->group(function () {
             Route::get('/guest/me', [\App\Http\Controllers\Api\V1\AuthController::class, 'guestMe']);
+            Route::put('/guest/contact', [\App\Http\Controllers\Api\V1\AuthController::class, 'attachGuestContact']);
             Route::post('/guest/logout', [\App\Http\Controllers\Api\V1\AuthController::class, 'logout']);
         });
+
     });
 });

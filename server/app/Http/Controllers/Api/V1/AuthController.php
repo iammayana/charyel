@@ -273,10 +273,22 @@ class AuthController extends Controller
 
     /**
      * Authenticate or register an anonymous guest identity via proof-of-possession.
+     * Enforces Approach A: requires at least one contact channel (email or phone) for new registrations.
+     * Allows legacy and transitional contactless guests to reauthenticate without contact.
+     * Prevents replacing existing contact with 409 Conflict.
      * Issues a scoped 30-day Sanctum token restricted to [guest:play].
      */
     public function guest(Request $request): JsonResponse
     {
+        // Fail-closed schema guard: if Migration 12 columns are missing, return 503
+        if (!Schema::hasColumns('guest_identities', ['email', 'phone_number', 'is_legacy'])) {
+            return response()->json([
+                'status' => 'error',
+                'code' => 'SCHEMA_UPGRADE_REQUIRED',
+                'message' => 'Database schema upgrade required. Please run pending migrations.',
+            ], 503);
+        }
+
         $validated = $request->validate([
             'guest_uuid' => [
                 'required',
@@ -302,22 +314,27 @@ class AuthController extends Controller
                     }
                 },
             ],
+            'email' => ['nullable', 'string', 'email:rfc', 'max:255'],
+            'phone_number' => ['nullable', 'string', 'max:32', 'regex:/^\+[1-9]\d{6,14}$/'],
             'device_name' => ['nullable', 'string', 'max:64'],
         ], [
             'guest_uuid.regex' => 'The guest uuid must be a canonical UUIDv7.',
+            'phone_number.regex' => 'The phone number must be in valid E.164 format (e.g. +12345678901).',
         ]);
 
         $guestUuid = strtolower($validated['guest_uuid']);
         $guestSecret = $validated['guest_secret'];
         $deviceName = $validated['device_name'] ?? 'Charyel Guest Client';
+        $inputEmail = isset($validated['email']) && trim($validated['email']) !== '' ? strtolower(trim($validated['email'])) : null;
+        $inputPhone = isset($validated['phone_number']) ? GuestIdentity::normalizePhone($validated['phone_number']) : null;
 
         // Transactional handler for guest lookup / creation
-        $executeAuth = function () use ($guestUuid, $guestSecret, $deviceName) {
+        $executeAuth = function () use ($guestUuid, $guestSecret, $deviceName, $inputEmail, $inputPhone) {
             $guest = GuestIdentity::where('guest_uuid', $guestUuid)->lockForUpdate()->first();
 
             if ($guest) {
                 // Reauthentication path
-                // 1. Strict proof of possession must be verified BEFORE any claim state disclosure
+                // 1. Strict proof of possession must be verified BEFORE any claim state disclosure or contact update
                 if (!Hash::check($guestSecret, $guest->secret_hash)) {
                     return [
                         'status' => 'unauthorized',
@@ -333,10 +350,44 @@ class AuthController extends Controller
                     ];
                 }
 
-                // 3. Revoke existing tokens for this identity to enforce single-active token policy
+                // 3. Contact replacement check:
+                // Strictly reject replacing an already-set non-null contact with a different value
+                if ($guest->email !== null && $inputEmail !== null && strcasecmp($guest->email, $inputEmail) !== 0) {
+                    return [
+                        'status' => 'conflict',
+                        'field' => 'email',
+                        'message' => 'Existing email cannot be replaced without verified contact-change workflow.',
+                    ];
+                }
+
+                if ($guest->phone_number !== null && $inputPhone !== null && $guest->phone_number !== $inputPhone) {
+                    return [
+                        'status' => 'conflict',
+                        'field' => 'phone_number',
+                        'message' => 'Existing phone number cannot be replaced without verified contact-change workflow.',
+                    ];
+                }
+
+                // 4. Attach missing contact if provided
+                $contactUpdated = false;
+                if ($guest->email === null && $inputEmail !== null) {
+                    $guest->email = $inputEmail;
+                    $contactUpdated = true;
+                }
+
+                if ($guest->phone_number === null && $inputPhone !== null) {
+                    $guest->phone_number = $inputPhone;
+                    $contactUpdated = true;
+                }
+
+                if ($contactUpdated) {
+                    $guest->save();
+                }
+
+                // 5. Revoke existing tokens for this identity to enforce single-active token policy
                 $guest->tokens()->delete();
 
-                // 4. Issue a new 30-day fixed-expiry guest token
+                // 6. Issue a new 30-day fixed-expiry guest token
                 $expiresAt = now()->addDays(30);
                 $plainToken = $guest->createToken($deviceName, ['guest:play'], $expiresAt)->plainTextToken;
 
@@ -350,10 +401,30 @@ class AuthController extends Controller
             }
 
             // Registration path
-            $guest = GuestIdentity::create([
-                'guest_uuid' => $guestUuid,
-                'secret_hash' => Hash::make($guestSecret),
-            ]);
+            // Approach A requires at least one contact channel (email or phone) for new guest onboarding
+            if (empty($inputEmail) && empty($inputPhone)) {
+                return [
+                    'status' => 'validation_error',
+                    'code' => 422,
+                    'error_code' => 'GUEST_CONTACT_REQUIRED',
+                    'message' => 'At least one contact method (email or phone_number) is required for guest registration.',
+                    'errors' => [
+                        'contact' => ['At least one contact method (email or phone_number) is required.'],
+                    ],
+                ];
+            }
+
+            $guest = new GuestIdentity();
+            $guest->guest_uuid = $guestUuid;
+            $guest->secret_hash = Hash::make($guestSecret);
+            $guest->email = $inputEmail;
+            $guest->phone_number = $inputPhone;
+            $guest->is_legacy = false;
+            $guest->email_verified_at = null;
+            $guest->phone_verified_at = null;
+            $guest->completed_quiz_count = 0;
+            $guest->gross_lifetime_xp = 0;
+            $guest->save();
 
             $expiresAt = now()->addDays(30);
             $plainToken = $guest->createToken($deviceName, ['guest:play'], $expiresAt)->plainTextToken;
@@ -388,6 +459,23 @@ class AuthController extends Controller
             ], 403);
         }
 
+        if ($result['status'] === 'conflict') {
+            return response()->json([
+                'status' => 'error',
+                'code' => 'CONTACT_REPLACEMENT_FORBIDDEN',
+                'message' => $result['message'],
+            ], 409);
+        }
+
+        if ($result['status'] === 'validation_error') {
+            return response()->json([
+                'status' => 'error',
+                'code' => $result['error_code'] ?? 'VALIDATION_ERROR',
+                'message' => $result['message'],
+                'errors' => $result['errors'] ?? [],
+            ], $result['code'] ?? 422);
+        }
+
         $guest = $result['guest'];
 
         return response()->json([
@@ -400,8 +488,143 @@ class AuthController extends Controller
                 'abilities' => ['guest:play'],
                 'expires_at' => $result['expires_at']->toIso8601String(),
                 'is_claimed' => false,
+                'is_legacy' => (bool) $guest->is_legacy,
+                'contact' => [
+                    'email' => $guest->email,
+                    'phone_number' => $guest->phone_number,
+                    'email_verified' => $guest->isEmailVerified(),
+                    'phone_verified' => $guest->isPhoneVerified(),
+                    'has_contact' => $guest->hasContact(),
+                ],
             ],
         ], $result['code']);
+    }
+
+    /**
+     * Attach an email or phone number to an authenticated guest identity.
+     * Permits attaching missing contact or adding a second contact channel.
+     * Strictly rejects replacing an already-set non-null contact with a 409 Conflict.
+     */
+    public function attachGuestContact(Request $request): JsonResponse
+    {
+        if (!Schema::hasColumns('guest_identities', ['email', 'phone_number', 'is_legacy'])) {
+            return response()->json([
+                'status' => 'error',
+                'code' => 'SCHEMA_UPGRADE_REQUIRED',
+                'message' => 'Database schema upgrade required. Please run pending migrations.',
+            ], 503);
+        }
+
+        $validated = $request->validate([
+            'email' => ['nullable', 'string', 'email:rfc', 'max:255'],
+            'phone_number' => ['nullable', 'string', 'max:32', 'regex:/^\+[1-9]\d{6,14}$/'],
+        ], [
+            'phone_number.regex' => 'The phone number must be in valid E.164 format (e.g. +12345678901).',
+        ]);
+
+        $inputEmail = isset($validated['email']) && trim($validated['email']) !== '' ? strtolower(trim($validated['email'])) : null;
+        $inputPhone = isset($validated['phone_number']) ? GuestIdentity::normalizePhone($validated['phone_number']) : null;
+
+        if (empty($inputEmail) && empty($inputPhone)) {
+            return response()->json([
+                'status' => 'error',
+                'code' => 'GUEST_CONTACT_REQUIRED',
+                'message' => 'At least one contact method (email or phone_number) must be provided.',
+                'errors' => [
+                    'contact' => ['At least one contact method (email or phone_number) must be provided.'],
+                ],
+            ], 422);
+        }
+
+        $guest = $request->user();
+
+        $result = DB::transaction(function () use ($guest, $inputEmail, $inputPhone) {
+            $lockedGuest = GuestIdentity::where('id', $guest->id)->lockForUpdate()->first();
+
+            if (!$lockedGuest) {
+                return ['status' => 'not_found'];
+            }
+
+            if ($lockedGuest->isClaimed()) {
+                return ['status' => 'claimed'];
+            }
+
+            // Check contact replacement rule
+            if ($lockedGuest->email !== null && $inputEmail !== null && strcasecmp($lockedGuest->email, $inputEmail) !== 0) {
+                return [
+                    'status' => 'conflict',
+                    'message' => 'Existing email cannot be replaced without verified contact-change workflow.',
+                ];
+            }
+
+            if ($lockedGuest->phone_number !== null && $inputPhone !== null && $lockedGuest->phone_number !== $inputPhone) {
+                return [
+                    'status' => 'conflict',
+                    'message' => 'Existing phone number cannot be replaced without verified contact-change workflow.',
+                ];
+            }
+
+            // Attach missing contact
+            $contactUpdated = false;
+            if ($lockedGuest->email === null && $inputEmail !== null) {
+                $lockedGuest->email = $inputEmail;
+                $contactUpdated = true;
+            }
+
+            if ($lockedGuest->phone_number === null && $inputPhone !== null) {
+                $lockedGuest->phone_number = $inputPhone;
+                $contactUpdated = true;
+            }
+
+            if ($contactUpdated) {
+                $lockedGuest->save();
+            }
+
+            return [
+                'status' => 'success',
+                'guest' => $lockedGuest,
+            ];
+        });
+
+        if ($result['status'] === 'not_found') {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Guest identity not found.',
+            ], 404);
+        }
+
+        if ($result['status'] === 'claimed') {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Guest identity has been claimed and converted into a registered user account.',
+            ], 403);
+        }
+
+        if ($result['status'] === 'conflict') {
+            return response()->json([
+                'status' => 'error',
+                'code' => 'CONTACT_REPLACEMENT_FORBIDDEN',
+                'message' => $result['message'],
+            ], 409);
+        }
+
+        $updatedGuest = $result['guest'];
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Contact details attached successfully.',
+            'data' => [
+                'guest_uuid' => $updatedGuest->guest_uuid,
+                'is_legacy' => (bool) $updatedGuest->is_legacy,
+                'contact' => [
+                    'email' => $updatedGuest->email,
+                    'phone_number' => $updatedGuest->phone_number,
+                    'email_verified' => $updatedGuest->isEmailVerified(),
+                    'phone_verified' => $updatedGuest->isPhoneVerified(),
+                    'has_contact' => $updatedGuest->hasContact(),
+                ],
+            ],
+        ], 200);
     }
 
     /**
@@ -417,6 +640,14 @@ class AuthController extends Controller
                 'guest_uuid' => $guest->guest_uuid,
                 'created_at' => $guest->created_at?->toIso8601String(),
                 'is_claimed' => $guest->isClaimed(),
+                'is_legacy' => (bool) $guest->is_legacy,
+                'contact' => [
+                    'email' => $guest->email,
+                    'phone_number' => $guest->phone_number,
+                    'email_verified' => $guest->isEmailVerified(),
+                    'phone_verified' => $guest->isPhoneVerified(),
+                    'has_contact' => $guest->hasContact(),
+                ],
             ],
         ]);
     }

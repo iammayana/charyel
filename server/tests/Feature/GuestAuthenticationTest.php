@@ -47,6 +47,7 @@ class GuestAuthenticationTest extends TestCase
         $response = $this->postJson('/api/v1/auth/guest', [
             'guest_uuid' => $uuid7,
             'guest_secret' => $secret,
+            'email' => 'guest@example.com',
             'device_name' => 'Pixel 8 Guest PWA',
         ]);
 
@@ -73,6 +74,7 @@ class GuestAuthenticationTest extends TestCase
         // Verify database state
         $this->assertDatabaseHas('guest_identities', [
             'guest_uuid' => $uuid7,
+            'email' => 'guest@example.com',
             'claimed_by_user_id' => null,
             'claimed_at' => null,
         ]);
@@ -97,6 +99,7 @@ class GuestAuthenticationTest extends TestCase
         $response = $this->postJson('/api/v1/auth/guest', [
             'guest_uuid' => $uuid7,
             'guest_secret' => $secret,
+            'email' => 'base64guest@example.com',
         ]);
 
         $response->assertStatus(201)
@@ -122,10 +125,12 @@ class GuestAuthenticationTest extends TestCase
         $regResponse = $this->postJson('/api/v1/auth/guest', [
             'guest_uuid' => $uuid7,
             'guest_secret' => $secret,
+            'email' => 'reauth@example.com',
             'device_name' => 'Session 1',
         ]);
         $regResponse->assertStatus(201);
         $token1 = $regResponse->json('data.token');
+
 
         $guest = GuestIdentity::where('guest_uuid', $uuid7)->first();
         $this->assertDatabaseCount('personal_access_tokens', 1);
@@ -174,6 +179,7 @@ class GuestAuthenticationTest extends TestCase
         $this->postJson('/api/v1/auth/guest', [
             'guest_uuid' => $uuid7,
             'guest_secret' => $realSecret,
+            'email' => 'invalidsecret@example.com',
         ])->assertStatus(201);
 
         // Attempt reauthentication with wrong secret
@@ -198,6 +204,7 @@ class GuestAuthenticationTest extends TestCase
         $response = $this->postJson('/api/v1/auth/guest', [
             'guest_uuid' => $uuid4,
             'guest_secret' => $secret,
+            'email' => 'guest@example.com',
         ]);
 
         $response->assertStatus(422)
@@ -214,6 +221,7 @@ class GuestAuthenticationTest extends TestCase
         $response = $this->postJson('/api/v1/auth/guest', [
             'guest_uuid' => $uuid7,
             'guest_secret' => $shortSecret,
+            'email' => 'guest@example.com',
         ]);
 
         $response->assertStatus(422)
@@ -224,6 +232,7 @@ class GuestAuthenticationTest extends TestCase
         $this->postJson('/api/v1/auth/guest', [
             'guest_uuid' => $uuid7,
             'guest_secret' => $plainSecret,
+            'email' => 'guest@example.com',
         ])->assertStatus(422)
             ->assertJsonValidationErrors(['guest_secret']);
     }
@@ -238,6 +247,7 @@ class GuestAuthenticationTest extends TestCase
         $response = $this->postJson('/api/v1/auth/guest', [
             'guest_uuid' => $uuid7,
             'guest_secret' => $malformed,
+            'email' => 'guest@example.com',
         ]);
 
         $response->assertStatus(422)
@@ -252,7 +262,9 @@ class GuestAuthenticationTest extends TestCase
         $response = $this->postJson('/api/v1/auth/guest', [
             'guest_uuid' => $uuid7,
             'guest_secret' => $secret,
+            'email' => 'guest@example.com',
         ]);
+
 
         $response->assertStatus(201);
         $expiresAtString = $response->json('data.expires_at');
@@ -340,6 +352,7 @@ class GuestAuthenticationTest extends TestCase
         $response = $this->postJson('/api/v1/auth/guest', [
             'guest_uuid' => $uuid7,
             'guest_secret' => $secret,
+            'email' => 'logout@example.com',
         ]);
         $token = $response->json('data.token');
 
@@ -372,6 +385,7 @@ class GuestAuthenticationTest extends TestCase
         $res = $this->postJson('/api/v1/auth/guest', [
             'guest_uuid' => $uuid7,
             'guest_secret' => $secret,
+            'email' => 'permit@example.com',
         ]);
         $token = $res->json('data.token');
 
@@ -396,8 +410,10 @@ class GuestAuthenticationTest extends TestCase
         $res = $this->postJson('/api/v1/auth/guest', [
             'guest_uuid' => $uuid7,
             'guest_secret' => $secret,
+            'email' => 'forbidden@example.com',
         ]);
         $guestToken = $res->json('data.token');
+
 
         // Attempting to access registered user's /me route
         $response = $this->withHeader('Authorization', 'Bearer ' . $guestToken)
@@ -549,7 +565,9 @@ class GuestAuthenticationTest extends TestCase
         $this->postJson('/api/v1/auth/guest', [
             'guest_uuid' => $uuid7,
             'guest_secret' => $secret,
+            'email' => 'ratelimit@example.com',
         ])->assertStatus(201);
+
 
         // Attempt 9 failed reauthentications (total 10 attempts against limit of 10/min)
         for ($i = 0; $i < 9; $i++) {

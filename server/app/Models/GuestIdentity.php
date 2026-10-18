@@ -17,6 +17,7 @@ class GuestIdentity extends Model
 
     /**
      * The attributes that are mass assignable.
+     * Note: 'is_legacy' is deliberately excluded to prevent client injection.
      *
      * @var array<int, string>
      */
@@ -25,6 +26,14 @@ class GuestIdentity extends Model
         'secret_hash',
         'claimed_by_user_id',
         'claimed_at',
+        'email',
+        'phone_number',
+        'email_verified_at',
+        'phone_verified_at',
+        'completed_quiz_count',
+        'gross_lifetime_xp',
+        'active_quiz_session_id',
+        'trial_limit_reached_at',
     ];
 
     /**
@@ -46,6 +55,12 @@ class GuestIdentity extends Model
         return [
             'claimed_at' => 'datetime',
             'created_at' => 'datetime',
+            'email_verified_at' => 'datetime',
+            'phone_verified_at' => 'datetime',
+            'trial_limit_reached_at' => 'datetime',
+            'is_legacy' => 'boolean',
+            'completed_quiz_count' => 'integer',
+            'gross_lifetime_xp' => 'integer',
         ];
     }
 
@@ -63,5 +78,46 @@ class GuestIdentity extends Model
     public function isClaimed(): bool
     {
         return $this->claimed_at !== null || $this->claimed_by_user_id !== null;
+    }
+
+    /**
+     * Determine if this guest identity has at least one contact channel attached.
+     */
+    public function hasContact(): bool
+    {
+        return !empty($this->email) || !empty($this->phone_number);
+    }
+
+    /**
+     * Check if the email address has been verified.
+     */
+    public function isEmailVerified(): bool
+    {
+        return $this->email_verified_at !== null;
+    }
+
+    /**
+     * Check if the phone number has been verified.
+     */
+    public function isPhoneVerified(): bool
+    {
+        return $this->phone_verified_at !== null;
+    }
+
+    /**
+     * Clean and normalize an input phone number to canonical E.164.
+     */
+    public static function normalizePhone(?string $phone): ?string
+    {
+        if ($phone === null) {
+            return null;
+        }
+
+        $trimmed = trim($phone);
+        if ($trimmed === '') {
+            return null;
+        }
+
+        return $trimmed;
     }
 }

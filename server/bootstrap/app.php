@@ -17,7 +17,9 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'auth.user' => \App\Http\Middleware\EnsureUserPrincipal::class,
             'auth.guest' => \App\Http\Middleware\EnsureGuestPrincipal::class,
+            'guest.contact' => \App\Http\Middleware\EnsureGuestHasContact::class,
         ]);
+
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(
