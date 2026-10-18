@@ -29,6 +29,11 @@ class AppServiceProvider extends ServiceProvider
 
             return new \App\Services\Verification\ArrayOtpDeliveryService();
         });
+
+        $this->app->singleton(
+            \App\Contracts\QuizScoringPolicyContract::class,
+            \App\Services\Quiz\Policies\StandardQuizScoringPolicy::class
+        );
     }
 
     /**
