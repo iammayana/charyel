@@ -41,6 +41,8 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        \App\Support\ProtectedDatabaseGuard::register();
+
         RateLimiter::for('login', function (Request $request) {
             $key = $request->ip() . '|' . strtolower((string) $request->input('email'));
             return Limit::perMinute(5)->by($key);

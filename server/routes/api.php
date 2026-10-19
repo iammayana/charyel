@@ -58,6 +58,20 @@ Route::prefix('v1')->group(function () {
                 ->middleware('throttle:verification-verify');
             Route::get('/status', [\App\Http\Controllers\Api\V1\VerificationController::class, 'status']);
         });
+    });
 
+    // Online Quiz Gameplay Endpoints (Guest Only)
+    Route::prefix('quiz/online')->group(function () {
+        // Gameplay initiation and completion strictly require attached contact details
+        Route::middleware(['auth:sanctum', 'auth.guest:guest:play', 'guest.contact'])->group(function () {
+            Route::post('/start', [\App\Http\Controllers\Api\V1\OnlineQuizController::class, 'start']);
+            Route::post('/complete', [\App\Http\Controllers\Api\V1\OnlineQuizController::class, 'complete']);
+        });
+
+        // Abandon and trial-status require authenticated guest principal with play capability
+        Route::middleware(['auth:sanctum', 'auth.guest:guest:play'])->group(function () {
+            Route::post('/abandon', [\App\Http\Controllers\Api\V1\OnlineQuizController::class, 'abandon']);
+            Route::get('/trial-status', [\App\Http\Controllers\Api\V1\OnlineQuizController::class, 'trialStatus']);
+        });
     });
 });
