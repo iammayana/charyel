@@ -990,6 +990,9 @@ class ContactAndTrialSchemaTest extends TestCase
     {
         DatabaseSafetyGuard::assertDestructiveOperationsAllowed();
 
+        // Roll back Migration 14 first so Migration 13 is at the top
+        Artisan::call('migrate:rollback', ['--step' => 1]);
+
         // Roll back Migration 13
         $exitCode = Artisan::call('migrate:rollback', ['--step' => 1]);
         $this->assertEquals(0, $exitCode);
@@ -1023,8 +1026,8 @@ class ContactAndTrialSchemaTest extends TestCase
             'phone_number' => '+2348055556666',
         ]);
 
-        // Rollback Migration 13 first so Migration 12 is at the top
-        Artisan::call('migrate:rollback', ['--step' => 1]);
+        // Rollback Migrations 14 and 13 first so Migration 12 is at the top
+        Artisan::call('migrate:rollback', ['--step' => 2]);
 
         try {
             Artisan::call('migrate:rollback', ['--step' => 1]);
@@ -1045,7 +1048,8 @@ class ContactAndTrialSchemaTest extends TestCase
             'email' => 'persisted_guest@example.com',
         ]);
 
-        Artisan::call('migrate:rollback', ['--step' => 1]);
+        // Rollback Migrations 14 and 13 first so Migration 12 is at the top
+        Artisan::call('migrate:rollback', ['--step' => 2]);
 
         try {
             Artisan::call('migrate:rollback', ['--step' => 1]);
@@ -1067,7 +1071,8 @@ class ContactAndTrialSchemaTest extends TestCase
             'gross_lifetime_xp' => 100,
         ]);
 
-        Artisan::call('migrate:rollback', ['--step' => 1]);
+        // Rollback Migrations 14 and 13 first so Migration 12 is at the top
+        Artisan::call('migrate:rollback', ['--step' => 2]);
 
         try {
             Artisan::call('migrate:rollback', ['--step' => 1]);
@@ -1088,7 +1093,8 @@ class ContactAndTrialSchemaTest extends TestCase
             'phone_verified_at' => now(),
         ]);
 
-        Artisan::call('migrate:rollback', ['--step' => 1]);
+        // Rollback Migrations 14 and 13 first so Migration 12 is at the top
+        Artisan::call('migrate:rollback', ['--step' => 2]);
 
         try {
             Artisan::call('migrate:rollback', ['--step' => 1]);
@@ -1105,7 +1111,7 @@ class ContactAndTrialSchemaTest extends TestCase
         DatabaseSafetyGuard::assertDestructiveOperationsAllowed();
 
         // Database is clean (no phone users, no populated guest contact/progress)
-        Artisan::call('migrate:rollback', ['--step' => 1]); // Rollback Migration 13
+        Artisan::call('migrate:rollback', ['--step' => 2]); // Rollback Migrations 14 and 13
         $exitCode = Artisan::call('migrate:rollback', ['--step' => 1]); // Rollback Migration 12
         $this->assertEquals(0, $exitCode);
 
